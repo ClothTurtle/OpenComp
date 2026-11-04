@@ -1,6 +1,17 @@
+import { ChevronLeft, ChevronRight, Diamond, Timer } from 'lucide-react'
 import { useRef, useState, type PointerEvent } from 'react'
 import { trackDrag } from '../lib/drag'
 import { clamp } from '../lib/time'
+
+/** Keyframe controls for an animatable property (the After Effects stopwatch). */
+export interface AnimControls {
+  animated: boolean
+  atKey: boolean
+  toggle: () => void // stopwatch: start/stop animating
+  key: () => void // add/remove a keyframe at the playhead
+  prev?: () => void
+  next?: () => void
+}
 
 interface Props {
   label: string
@@ -11,12 +22,38 @@ interface Props {
   unit?: string
   defaultValue: number
   onChange: (value: number) => void
+  anim?: AnimControls
 }
 
 /** Label, slider and an editable number. Double-click the label to reset. */
-export function PropertyRow({ label, value, min, max, step, unit, defaultValue, onChange }: Props) {
+export function PropertyRow({ label, value, min, max, step, unit, defaultValue, onChange, anim }: Props) {
   return (
-    <div className="prop-row">
+    <div className={`prop-row ${anim ? 'has-anim' : ''}`}>
+      {anim && (
+        <span className="anim">
+          <button
+            type="button"
+            className={`anim-btn ${anim.animated ? 'on' : ''}`}
+            title={anim.animated ? 'Stop animating (keeps the current value)' : 'Animate this property'}
+            onClick={anim.toggle}
+          >
+            <Timer size={12} />
+          </button>
+          {anim.animated && (
+            <>
+              <button type="button" className="anim-btn" title="Previous keyframe" disabled={!anim.prev} onClick={anim.prev}>
+                <ChevronLeft size={11} />
+              </button>
+              <button type="button" className={`anim-btn ${anim.atKey ? 'on' : ''}`} title={anim.atKey ? 'Remove keyframe' : 'Add keyframe'} onClick={anim.key}>
+                <Diamond size={10} />
+              </button>
+              <button type="button" className="anim-btn" title="Next keyframe" disabled={!anim.next} onClick={anim.next}>
+                <ChevronRight size={11} />
+              </button>
+            </>
+          )}
+        </span>
+      )}
       <label title="Double-click to reset" onDoubleClick={() => onChange(defaultValue)}>
         {label}
       </label>
@@ -35,10 +72,10 @@ export function PropertyRow({ label, value, min, max, step, unit, defaultValue, 
 }
 
 /** After Effects-style value: drag left/right to change it (Shift = faster), click to type. */
-function ScrubNumber({ value, min, max, step, unit, onChange }: Omit<Props, 'label' | 'defaultValue'>) {
+function ScrubNumber({ value, min, max, step, unit, onChange }: Omit<Props, 'label' | 'defaultValue' | 'anim'>) {
   const [editing, setEditing] = useState(false)
   const cancelled = useRef(false)
-  const decimals = step < 1 ? 2 : 0
+  const decimals = step < 1 ? (step < 0.1 ? 2 : 1) : 0
   const set = (v: number) => onChange(clamp(Number(v.toFixed(decimals)), min, max))
 
   if (editing) {

@@ -1,21 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_COLOR, DEFAULT_TRANSFORM, newProject, type Clip } from '../project'
+import { DEFAULT_TRANSFORM, newClip, newProject, type Clip } from '../project'
 import { corners, containsPoint, layerGeometry } from './geometry'
 import { timecode, toFrame } from './time'
-import { contentEnd, isFree, snapOffset, splitClip, visualClipsAt } from './timeline'
+import { contentEnd, isFree, layerTime, snapOffset, splitClip, visualClipsAt } from './timeline'
 
-const clip = (over: Partial<Clip> = {}): Clip => ({
-  id: 'a',
-  assetId: 'asset',
-  trackId: 't1',
-  start: 2,
-  in: 1,
-  duration: 4,
-  volume: 100,
-  transform: { ...DEFAULT_TRANSFORM },
-  color: { ...DEFAULT_COLOR },
-  ...over,
-})
+const clip = (over: Partial<Clip> = {}): Clip =>
+  newClip({ id: 'a', assetId: 'asset', trackId: 't1', start: 2, in: 1, duration: 4, ...over })
 
 describe('splitClip', () => {
   it('cuts into two pieces that cover the original', () => {
@@ -34,6 +24,18 @@ describe('splitClip', () => {
     const [left, right] = splitClip(clip(), 3, 'b')!
     right.color.exposure = 2
     expect(left.color.exposure).toBe(0)
+  })
+
+  it('accounts for speed when working out the right piece’s source offset', () => {
+    const [, right] = splitClip(clip({ speed: 200 }), 3, 'b')!
+    expect(right.in).toBe(3) // 1s into the clip at 2x = 2s of source, plus the original 1s in-point
+  })
+
+  it('keeps keyframe time stable across the cut', () => {
+    const original = clip({ speed: 50 })
+    const [left, right] = splitClip(original, 4, 'b')!
+    expect(layerTime(left, 5)).toBeCloseTo(layerTime(original, 5))
+    expect(layerTime(right, 5)).toBeCloseTo(layerTime(original, 5))
   })
 })
 

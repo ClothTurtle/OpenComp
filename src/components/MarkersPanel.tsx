@@ -3,7 +3,6 @@ import { addMarker, removeMarker, updateMarker } from '../actions'
 import { seek } from '../engine/playback'
 import { timecode } from '../lib/time'
 import { useStore } from '../store'
-import { Panel } from './Panel'
 import { IconButton } from './ui'
 
 /** Bookmarks: jump to them, label them, delete them. They also show on the timeline ruler. */
@@ -12,7 +11,12 @@ export function MarkersPanel() {
   const fps = useStore((s) => s.project.settings.fps)
 
   return (
-    <Panel title="Markers" actions={<IconButton icon={Plus} title="Add marker at playhead (M)" onClick={() => addMarker()} />}>
+    <div className="markers">
+      <div className="markers-bar">
+        <button type="button" className="btn small" onClick={() => addMarker()}>
+          <Plus size={12} /> Add at playhead (M)
+        </button>
+      </div>
       {markers.length === 0 ? (
         <div className="empty-note">
           <span>
@@ -38,6 +42,6 @@ export function MarkersPanel() {
           ))}
         </ul>
       )}
-    </Panel>
+    </div>
   )
 }

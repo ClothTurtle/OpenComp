@@ -1,0 +1,71 @@
+{
+  "name": "opencomp-desktop",
+  "productName": "OpenComp",
+  "version": "0.2.0",
+  "description": "OpenComp desktop app: the OpenComp editor in its own window, with direct file access.",
+  "author": "OpenComp contributors",
+  "license": "MIT",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "build": {
+    "appId": "org.opencomp.desktop",
+    "productName": "OpenComp",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "web/**/*",
+      "mcp/**/*",
+      "build/icon.png"
+    ],
+    "asarUnpack": [
+      "mcp/**"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "OpenComp-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "OpenComp-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "AudioVideo",
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0"
+  }
+}

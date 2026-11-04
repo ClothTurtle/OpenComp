@@ -1,8 +1,20 @@
 import { create } from 'zustand'
-import { newProject, type Project } from './project'
+import { idbGet, idbSet } from './lib/idb'
+import { migrateProject, newProject, type Clip, type Project } from './project'
+import { getSettings } from './settings'
 
-export type Tool = 'select' | 'razor'
-export type Dialog = 'comp' | 'export' | 'shortcuts' | null
+export type Tool =
+  | 'select'
+  | 'hand'
+  | 'razor'
+  | 'text'
+  | 'rect-mask'
+  | 'ellipse-mask'
+  | 'pen-mask'
+  | 'brush-mask'
+  | 'smart-mask'
+
+export type Dialog = 'comp' | 'export' | 'shortcuts' | 'settings' | 'captions' | 'image' | null
 
 export interface EditorState {
   project: Project
@@ -13,39 +25,38 @@ export interface EditorState {
   playing: boolean
   selectedClipId: string | null
   selectedAssetId: string | null
+  selectedMaskId: string | null
   tool: Tool
   snapping: boolean
   pxPerSec: number // timeline zoom
   dialog: Dialog
+  sideTab: 'markers' | 'assistant'
+  clipboard: Clip | null
+  status: string // short message shown in the toolbar (e.g. AI progress)
   mediaVersion: number // bumped when media files are linked, so offline badges refresh
   layoutVersion: number // bumped to reset panel sizes
 }
 
-const SAVE_KEY = 'opencomp:project'
-const HISTORY_LIMIT = 200
+const AUTOSAVE_KEY = 'project'
+const HISTORY_LIMIT = 100
 const MERGE_WINDOW_MS = 1500
 
-function loadAutosave(): Project | null {
-  try {
-    const p = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null')
-    return p?.version === 1 ? p : null
-  } catch {
-    return null
-  }
-}
-
 export const useStore = create<EditorState>()(() => ({
-  project: loadAutosave() ?? newProject(),
+  project: newProject(),
   past: [],
   future: [],
   time: 0,
   playing: false,
   selectedClipId: null,
   selectedAssetId: null,
+  selectedMaskId: null,
   tool: 'select',
   snapping: true,
   pxPerSec: 60,
   dialog: null,
+  sideTab: 'markers',
+  clipboard: null,
+  status: '',
   mediaVersion: 0,
   layoutVersion: 0,
 }))
@@ -88,19 +99,40 @@ export function redo() {
 /** Swap in a whole project (new / open). Clears undo history. */
 export function replaceProject(project: Project) {
   lastMergeKey = undefined
-  setState({ project, past: [], future: [], time: 0, playing: false, selectedClipId: null, selectedAssetId: null })
+  setState({
+    project,
+    past: [],
+    future: [],
+    time: 0,
+    playing: false,
+    selectedClipId: null,
+    selectedAssetId: null,
+    selectedMaskId: null,
+  })
 }
 
-// Autosave the project (not the media files themselves) so a refresh doesn't lose work.
+/** Load the autosaved project, if any. Called once before the UI first renders. */
+export async function restoreAutosave() {
+  let saved = await idbGet<unknown>(AUTOSAVE_KEY)
+  if (!saved) {
+    // Version 0.1 autosaved to localStorage.
+    try {
+      saved = JSON.parse(localStorage.getItem('opencomp:project') ?? 'null')
+    } catch {
+      saved = null
+    }
+  }
+  if (!saved) return
+  try {
+    setState({ project: migrateProject(saved) })
+  } catch {
+    // Corrupt autosave: start fresh.
+  }
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 useStore.subscribe((state, prev) => {
-  if (state.project === prev.project) return
+  if (state.project === prev.project || !getSettings().autosave) return
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state.project))
-    } catch {
-      // Storage full or blocked: autosave is best-effort.
-    }
-  }, 400)
+  saveTimer = setTimeout(() => void idbSet(AUTOSAVE_KEY, state.project).catch(() => {}), 500)
 })

@@ -1,5 +1,5 @@
 // Pure timeline helpers: no DOM, no store. Covered by timeline.test.ts.
-import type { Asset, Clip, Project } from '../project'
+import type { Asset, Clip, Project, Track } from '../project'
 
 const EPS = 1e-6
 
@@ -9,6 +9,24 @@ export const clipEnd = (c: Clip) => c.start + c.duration
 export const contentEnd = (p: Project) => p.clips.reduce((end, c) => Math.max(end, clipEnd(c)), 0)
 
 export const isActiveAt = (c: Clip, t: number) => t >= c.start && t < clipEnd(c)
+
+/** Where in the source media the clip is at timeline time t (speed-aware). */
+export const sourceTime = (c: Clip, t: number) => c.in + (t - c.start) * (c.speed / 100)
+
+/**
+ * Keyframe time for a clip. It stays put when the clip is trimmed or split, so keyframes stay
+ * attached to the same moment of the content; it moves with the clip when the clip moves.
+ */
+export const layerTime = (c: Clip, t: number) => t - c.start + c.in / (c.speed / 100)
+
+/** Track visibility/audibility, taking solo into account: if any track is soloed, only soloed tracks count. */
+export function trackState(p: Project, track: Track) {
+  const solo = p.tracks.some((t) => t.solo)
+  return {
+    visible: !track.hidden && (!solo || track.solo),
+    audible: !track.muted && (!solo || track.solo),
+  }
+}
 
 /** True if [start, end) on a track doesn't overlap any clip except `ignoreId`. */
 export function isFree(p: Project, trackId: string, start: number, end: number, ignoreId?: string) {
@@ -25,7 +43,7 @@ export function splitClip(clip: Clip, t: number, newId: string): [Clip, Clip] | 
     ...structuredClone(clip),
     id: newId,
     start: t,
-    in: clip.in + (t - clip.start),
+    in: sourceTime(clip, t),
     duration: clipEnd(clip) - t,
   }
   return [left, right]
@@ -55,16 +73,30 @@ export function snapOffset(edges: number[], targets: number[], threshold: number
 }
 
 /** Clips with a picture at time t, bottom layer first. Hidden tracks and audio are skipped. */
-export function visualClipsAt(p: Project, t: number): { clip: Clip; asset: Asset }[] {
-  const out: { clip: Clip; asset: Asset }[] = []
+export function visualClipsAt(p: Project, t: number): { clip: Clip; asset?: Asset }[] {
+  const out: { clip: Clip; asset?: Asset }[] = []
   for (let i = p.tracks.length - 1; i >= 0; i--) {
     const track = p.tracks[i]
-    if (track.hidden) continue
+    if (!trackState(p, track).visible) continue
     for (const clip of p.clips) {
       if (clip.trackId !== track.id || !isActiveAt(clip, t)) continue
+      if (!clip.assetId) {
+        out.push({ clip })
+        continue
+      }
       const asset = p.assets.find((a) => a.id === clip.assetId)
       if (asset && asset.kind !== 'audio') out.push({ clip, asset })
     }
   }
   return out
+}
+
+/** Every marker and clip edge, sorted: what "jump to previous/next" moves between. */
+export function editPoints(p: Project): number[] {
+  const points = new Set<number>([0, ...p.markers.map((m) => m.time)])
+  for (const c of p.clips) {
+    points.add(c.start)
+    points.add(clipEnd(c))
+  }
+  return [...points].sort((a, b) => a - b)
 }

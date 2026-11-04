@@ -1,10 +1,10 @@
-// Real-time export: plays the timeline from the start while recording the viewer canvas and the
-// audio mix with MediaRecorder. No dependencies and it uses the browser's hardware encoders, but it
-// takes as long as the video. A faster frame-by-frame exporter (WebCodecs) can replace this later.
+// Real-time export: plays the timeline while recording the viewer canvas and the audio mix with
+// MediaRecorder. No dependencies and it uses the browser's hardware encoders, but it takes as long
+// as the video. A faster frame-by-frame exporter (WebCodecs) can replace this later.
 import { contentEnd } from '../lib/timeline'
 import { getState, useStore } from '../store'
 import { audioStream } from './media'
-import { pause, play, seek, viewerCanvas } from './playback'
+import { pause, play, requestRender, seek, setExportRange, viewerCanvas } from './playback'
 
 export interface ExportFormat {
   label: string
@@ -31,13 +31,18 @@ export interface ExportJob {
   cancel(): void
 }
 
-export function exportVideo(format: ExportFormat, onProgress: (fraction: number) => void): ExportJob {
+export function exportVideo(format: ExportFormat, workAreaOnly: boolean, onProgress: (fraction: number) => void): ExportJob {
   const canvas = viewerCanvas()
   const { project, time: returnTo } = getState()
-  const end = contentEnd(project)
-  if (!canvas || end === 0) throw new Error('There is nothing on the timeline to export.')
+  const [from, to] = workAreaOnly && project.workArea ? project.workArea : [0, contentEnd(project)]
+  if (!canvas || to <= from) throw new Error('There is nothing on the timeline to export.')
 
   const { width, height, fps } = project.settings
+  pause()
+  setExportRange([from, to])
+  seek(from)
+  requestRender()
+
   const stream = canvas.captureStream(fps)
   for (const track of audioStream().getAudioTracks()) stream.addTrack(track)
   const recorder = new MediaRecorder(stream, {
@@ -56,6 +61,7 @@ export function exportVideo(format: ExportFormat, onProgress: (fraction: number)
   const cleanup = () => {
     unsubscribe()
     for (const track of stream.getVideoTracks()) track.stop() // the audio track is shared; leave it running
+    setExportRange(null)
     seek(returnTo)
   }
   recorder.onstop = () => {
@@ -63,14 +69,12 @@ export function exportVideo(format: ExportFormat, onProgress: (fraction: number)
     finish(cancelled ? null : new Blob(chunks, { type: format.mime.split(';')[0] }))
   }
 
-  pause()
-  seek(0)
   // Give the first frames a moment to decode before recording starts.
   const startTimer = setTimeout(() => {
     recorder.start(1000)
     play()
     unsubscribe = useStore.subscribe((s) => {
-      onProgress(Math.min(1, s.time / end))
+      onProgress(Math.min(1, (s.time - from) / (to - from)))
       if (!s.playing && recorder.state === 'recording') recorder.stop()
     })
   }, 500)

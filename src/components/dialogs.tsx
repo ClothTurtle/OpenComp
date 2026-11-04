@@ -3,6 +3,7 @@ import { exportVideo, supportedFormats, type ExportJob } from '../engine/exporte
 import { download, fileSafe } from '../lib/files'
 import { timecode } from '../lib/time'
 import { contentEnd } from '../lib/timeline'
+import { desktop } from '../platform'
 import { SHORTCUTS } from '../shortcuts'
 import { commit, useStore } from '../store'
 import { closeDialog, Modal } from './ui'
@@ -128,21 +129,26 @@ export function ExportDialog() {
   const [progress, setProgress] = useState<number | null>(null)
   const [message, setMessage] = useState('')
   const job = useRef<ExportJob | null>(null)
-  const end = contentEnd(project)
+  const [workAreaOnly, setWorkAreaOnly] = useState(!!project.workArea)
+  const [from, to] = workAreaOnly && project.workArea ? project.workArea : [0, contentEnd(project)]
+  const end = to - from
   const { width, height, fps } = project.settings
 
   const start = async () => {
     const format = formats[formatIndex]
     setMessage('')
     try {
-      job.current = exportVideo(format, setProgress)
+      job.current = exportVideo(format, workAreaOnly, setProgress)
       setProgress(0)
       const blob = await job.current.done
-      if (blob) {
-        download(blob, `${fileSafe(project.name)}.${format.ext}`)
-        setMessage('Done! The video was saved to your downloads.')
+      const name = `${fileSafe(project.name)}.${format.ext}`
+      if (!blob) setMessage('Export cancelled.')
+      else if (desktop) {
+        const saved = await desktop.saveFile(await blob.arrayBuffer(), name)
+        setMessage(saved ? `Saved to ${saved}` : 'Not saved.')
       } else {
-        setMessage('Export cancelled.')
+        download(blob, name)
+        setMessage('Done! The video was saved to your downloads.')
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err))
@@ -187,6 +193,16 @@ export function ExportDialog() {
         <dd>{fps} fps</dd>
         <dt>Duration</dt>
         <dd>{timecode(end, fps)}</dd>
+        {project.workArea && (
+          <>
+            <dt>Range</dt>
+            <dd>
+              <label className="check">
+                <input type="checkbox" checked={workAreaOnly} disabled={running} onChange={(e) => setWorkAreaOnly(e.target.checked)} /> Work area only
+              </label>
+            </dd>
+          </>
+        )}
         <dt>Format</dt>
         <dd>
           {formats.length ? (

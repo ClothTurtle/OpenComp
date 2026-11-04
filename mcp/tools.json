@@ -1,0 +1,300 @@
+[
+  {
+    "name": "get_project",
+    "description": "Summarise the open OpenComp project: composition settings, tracks (top track is the top layer), clips with ids/times/type/effects/masks/animated properties, imported media assets, markers, work area and the playhead. Call this first to learn ids before editing. Times are in seconds. Positions are in composition pixels, as offsets from the frame centre.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "get_frame",
+    "description": "Render the composition (with all effects, masks and grading) at a time and return it as an image, so you can see what the edit looks like. Use it to check your work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "time": { "type": "number", "description": "Timeline time in seconds. Defaults to the playhead." },
+        "max_size": { "type": "integer", "description": "Longest side of the returned image in pixels (default 768)." }
+      }
+    }
+  },
+  {
+    "name": "list_effects",
+    "description": "List every effect that can be added to a clip, with each parameter's key, type, range and default, plus the animation presets.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "seek",
+    "description": "Move the playhead to a time.",
+    "inputSchema": { "type": "object", "properties": { "time": { "type": "number" } }, "required": ["time"] }
+  },
+  {
+    "name": "import_media",
+    "description": "Import video/audio/image files into the project by absolute path. Desktop app only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "paths": { "type": "array", "items": { "type": "string" } } },
+      "required": ["paths"]
+    }
+  },
+  {
+    "name": "add_media_clip",
+    "description": "Put an imported asset on the timeline. Returns the new clip id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "asset_id": { "type": "string" },
+        "start": { "type": "number", "description": "Timeline start in seconds (default: playhead)." },
+        "track_id": { "type": "string", "description": "Preferred track; a free track is used if it is occupied." }
+      },
+      "required": ["asset_id"]
+    }
+  },
+  {
+    "name": "add_text",
+    "description": "Add a text layer (title, caption, lower third) on a new top track. Returns the clip id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "Use \\n for line breaks." },
+        "start": { "type": "number" },
+        "duration": { "type": "number", "description": "Seconds (default 5)." },
+        "x": { "type": "number", "description": "Horizontal offset from the frame centre, in comp px." },
+        "y": { "type": "number", "description": "Vertical offset from the frame centre, in comp px (positive is down)." },
+        "size": { "type": "number", "description": "Font size in comp px." },
+        "color": { "type": "string", "description": "#rrggbb" },
+        "font": { "type": "string", "description": "CSS font family." },
+        "bold": { "type": "boolean" },
+        "italic": { "type": "boolean" },
+        "align": { "type": "string", "enum": ["left", "center", "right"] },
+        "box": { "type": "boolean", "description": "Draw a background box behind the text." },
+        "box_color": { "type": "string" },
+        "stroke_width": { "type": "number" },
+        "stroke_color": { "type": "string" }
+      },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "add_solid",
+    "description": "Add a full-frame solid colour layer on a new top track. Returns the clip id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "color": { "type": "string", "description": "#rrggbb" },
+        "start": { "type": "number" },
+        "duration": { "type": "number" }
+      },
+      "required": ["color"]
+    }
+  },
+  {
+    "name": "add_adjustment_layer",
+    "description": "Add an adjustment layer: its colour grade, effects and masks apply to every layer below it. Returns the clip id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "start": { "type": "number" }, "duration": { "type": "number" } }
+    }
+  },
+  {
+    "name": "update_clip",
+    "description": "Change a clip. Only the fields you pass change. transform: {x, y, scale (%), rotation (deg), opacity (%)}. color: {exposure (stops, -3..3), contrast, highlights, shadows, saturation, temperature, tint (each -100..100)}. audio: {volume (%), pan (-100..100), fadeIn, fadeOut (s), low, mid, high (dB)}. text: any text style field. If a property is animated (has keyframes), use set_keyframe instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "start": { "type": "number" },
+        "duration": { "type": "number" },
+        "track_id": { "type": "string" },
+        "name": { "type": "string" },
+        "speed": { "type": "number", "description": "Playback speed in percent (10..1000)." },
+        "blend_mode": { "type": "string", "enum": ["normal", "multiply", "screen", "overlay", "soft-light", "add", "darken", "lighten", "difference"] },
+        "transform": { "type": "object" },
+        "color": { "type": "object" },
+        "audio": { "type": "object" },
+        "text": { "type": "object" },
+        "solid": { "type": "string" }
+      },
+      "required": ["clip_id"]
+    }
+  },
+  {
+    "name": "split_clip",
+    "description": "Cut clips in two at a time. Cuts the given clip, or every clip under that time if no clip_id is given.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "time": { "type": "number" }, "clip_id": { "type": "string" } },
+      "required": ["time"]
+    }
+  },
+  {
+    "name": "delete_clip",
+    "description": "Delete a clip. With ripple, later clips on the same track move back to close the gap.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "clip_id": { "type": "string" }, "ripple": { "type": "boolean" } },
+      "required": ["clip_id"]
+    }
+  },
+  {
+    "name": "add_effect",
+    "description": "Add an effect to a clip (see list_effects for types and parameters). Returns the effect id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "type": { "type": "string" },
+        "params": { "type": "object", "description": "Parameter values by key; omitted ones use defaults." }
+      },
+      "required": ["clip_id", "type"]
+    }
+  },
+  {
+    "name": "update_effect",
+    "description": "Change an effect's parameters or switch it on/off.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "effect_id": { "type": "string" },
+        "params": { "type": "object" },
+        "enabled": { "type": "boolean" }
+      },
+      "required": ["clip_id", "effect_id"]
+    }
+  },
+  {
+    "name": "remove_effect",
+    "description": "Remove an effect from a clip.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "clip_id": { "type": "string" }, "effect_id": { "type": "string" } },
+      "required": ["clip_id", "effect_id"]
+    }
+  },
+  {
+    "name": "set_keyframe",
+    "description": "Animate a numeric property by setting its value at a timeline time. Property paths: transform.x, transform.y, transform.scale, transform.rotation, transform.opacity, color.<key>, audio.volume, audio.pan, text.size, fx.<effect_id>.<param>. Add two or more keyframes to animate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "property": { "type": "string" },
+        "time": { "type": "number", "description": "Timeline time in seconds." },
+        "value": { "type": "number" },
+        "ease": { "type": "string", "enum": ["linear", "ease", "hold"] }
+      },
+      "required": ["clip_id", "property", "time", "value"]
+    }
+  },
+  {
+    "name": "apply_preset",
+    "description": "Apply an animation preset (adds keyframes): fade-in, fade-out, slide-left, slide-right, slide-up, slide-down, pop-in, spin-in, ken-burns-in, ken-burns-out, drift, shake, blur-in.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "clip_id": { "type": "string" }, "preset": { "type": "string" } },
+      "required": ["clip_id", "preset"]
+    }
+  },
+  {
+    "name": "add_marker",
+    "description": "Add a bookmark marker on the timeline.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "time": { "type": "number" }, "label": { "type": "string" } },
+      "required": ["time"]
+    }
+  },
+  {
+    "name": "remove_marker",
+    "description": "Remove a marker.",
+    "inputSchema": { "type": "object", "properties": { "marker_id": { "type": "string" } }, "required": ["marker_id"] }
+  },
+  {
+    "name": "set_composition",
+    "description": "Change the project name, resolution, frame rate or background colour.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "fps": { "type": "number" },
+        "background": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "set_work_area",
+    "description": "Limit playback and export to a time range. Pass no start/end to clear it.",
+    "inputSchema": { "type": "object", "properties": { "start": { "type": "number" }, "end": { "type": "number" } } }
+  },
+  {
+    "name": "ai_mask",
+    "description": "Mask an object in a video or image clip using AI segmentation. Give points in composition pixels (as seen in get_frame at full resolution, origin top-left) on or off the object at the given time. Returns the mask id. Hides everything outside the object; set inverted with update_mask to remove the object instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "time": { "type": "number", "description": "Timeline time to segment (default: playhead)." },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "include": { "type": "boolean" } },
+            "required": ["x", "y"]
+          }
+        }
+      },
+      "required": ["clip_id", "points"]
+    }
+  },
+  {
+    "name": "update_mask",
+    "description": "Change a mask: mode (add/subtract/intersect), inverted, feather (px), expansion (px), opacity (%), enabled.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "mask_id": { "type": "string" },
+        "mode": { "type": "string", "enum": ["add", "subtract", "intersect"] },
+        "inverted": { "type": "boolean" },
+        "feather": { "type": "number" },
+        "expansion": { "type": "number" },
+        "opacity": { "type": "number" },
+        "enabled": { "type": "boolean" }
+      },
+      "required": ["clip_id", "mask_id"]
+    }
+  },
+  {
+    "name": "track_mask",
+    "description": "Track an AI mask's object through the clip so the mask follows it. Can take a while.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clip_id": { "type": "string" },
+        "mask_id": { "type": "string" },
+        "direction": { "type": "string", "enum": ["forward", "backward", "both"] }
+      },
+      "required": ["clip_id", "mask_id"]
+    }
+  },
+  {
+    "name": "generate_captions",
+    "description": "Transcribe the speech in a clip (or every clip with audio) into caption text layers on a new Captions track. Can take a while.",
+    "inputSchema": { "type": "object", "properties": { "clip_id": { "type": "string" } } }
+  },
+  {
+    "name": "add_track",
+    "description": "Add an empty track at the top.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "undo",
+    "description": "Undo the last change.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "redo",
+    "description": "Redo the last undone change.",
+    "inputSchema": { "type": "object", "properties": {} }
+  }
+]

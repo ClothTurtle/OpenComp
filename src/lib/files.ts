@@ -2,6 +2,8 @@ export const MEDIA_ACCEPT = 'video/*,audio/*,image/*,.mkv,.mov'
 
 /** Drag-and-drop type used when dragging an asset from the Project panel to the timeline. */
 export const ASSET_DRAG_TYPE = 'application/x-opencomp-asset'
+/** ...and an effect from the Features sidebar onto a clip. */
+export const EFFECT_DRAG_TYPE = 'application/x-opencomp-effect'
 
 /** Open the native file picker. Resolves with [] if the user cancels. */
 export function pickFiles(accept: string, multiple = true): Promise<File[]> {
