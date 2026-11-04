@@ -2,8 +2,8 @@
 // alternative interpretations, and track the masked object through the clip.
 import { create } from 'zustand'
 import { addMask, updateMask } from '../actions'
-import { imageElement, clipElement, sourceUrl, waitFor } from '../engine/media'
-import { requestRender, waitForFrame } from '../engine/playback'
+import { imageElement, sourceUrl, waitFor } from '../engine/media'
+import { elementFor, requestRender, waitForFrame } from '../engine/playback'
 import { estimateShift, interiorPoints, iou, maskBounds, rasterize, shiftPolygons } from '../lib/contours'
 import { sourceTime } from '../lib/timeline'
 import { MASK_FPS, type Mask, type Point } from '../project'
@@ -44,7 +44,7 @@ export async function maskFromPrompt(newPoints: Prompt, fresh = false): Promise<
   const points: Prompt = [...(refine ? existing!.prompt!.points : []), ...newPoints]
 
   const grab = () => {
-    const el = asset.kind === 'image' ? imageElement(asset, requestRender) : (clipElement(clip, asset, requestRender) as HTMLVideoElement | null)
+    const el = asset.kind === 'image' ? imageElement(asset, requestRender) : (elementFor(getState().project, clip, asset) as HTMLVideoElement | null)
     if (!el) throw new Error('The frame is not loaded yet')
     return frameImage(el, asset.width, asset.height)
   }

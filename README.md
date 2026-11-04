@@ -2,7 +2,7 @@
 
 (DISCLAIMER) This application is fully vibe-coded using Claude.
 
-A lightweight, open-source video compositor and editor with a dark, panel-based layout inspired by After Effects. It has AI masking that follows objects, auto captions, 46 GPU effects, keyframes, and Claude built in.
+A lightweight, open-source video compositor and editor with a dark, panel-based layout inspired by After Effects. It has AI masking that follows objects, auto captions, 159 GPU effects (113 of them After Effects-style), keyframes, and Claude built in.
 
 It comes in two flavours, with the same app inside:
 
@@ -54,7 +54,9 @@ This needs Node.js 22.12 or newer. Electron is only downloaded for these command
 
 ## What it does
 
-Everything optional is listed in the **Features & Effects** sidebar on the right (Ctrl+B). It's searchable, and every item has an on/off switch. Switch off what you don't use and it disappears from the menus, toolbar and panels. Effects and presets can be dragged onto a clip, or applied to the selected clip.
+Everything optional is listed in the **Features & Effects** sidebar on the right (Ctrl+B), on two pages: **Essentials** and **Advanced (AE)** (After Effects-style effects, by After Effects category). It's searchable, and every item has an on/off switch. Switch off what you don't use and it disappears from the menus, toolbar and panels.
+
+The button on each row (or a double-click) uses the feature straight away. **Apply** adds an effect to the selected clip and opens a small floating window with its controls. **Open** opens a window with just that part of the clip's properties: blend and speed, keyframes, audio, masks. Toggles like Loop, Guides and Half resolution switch immediately. Effects and presets can also be dragged onto a clip.
 
 | Area | Features |
 | --- | --- |
@@ -62,11 +64,12 @@ Everything optional is listed in the **Features & Effects** sidebar on the right
 | **Layers** | Video, audio, images, **text** (font, outline, shadow, box), **solids**, and **adjustment layers** that apply their effects to everything below. Nine blend modes. |
 | **Animation** | A keyframe stopwatch on every numeric property: transform, colour, volume, text size and every effect parameter. Easing, keyframe navigation, and diamonds on the timeline. 13 animation presets: fades, slides, pop, spin, Ken Burns, shake, blur-in. |
 | **Colour** | Exposure, contrast, highlights, shadows, saturation, temperature and tint on every clip, plus Levels, Hue/Sat, Vibrance, split toning, duotone and more as effects. |
-| **Effects (46)** | Colour & light, blurs (gaussian, directional, zoom), sharpen, distortions (wave, twirl, bulge, lens, RGB split, glitch, mirror, kaleidoscope), stylize (glow, drop shadow, outline, grain, scanlines, halftone, cartoon, old film), keying (chroma, luma) and transitions (fades, dip to colour, linear/iris/clock wipes). All run on the GPU. |
+| **Effects (46 essentials)** | Colour & light, blurs (gaussian, directional, zoom), sharpen, distortions (wave, twirl, bulge, lens, RGB split, glitch, mirror, kaleidoscope), stylize (glow, drop shadow, outline, grain, scanlines, halftone, cartoon, old film), keying (chroma, luma) and transitions (fades, dip to colour, linear/iris/clock wipes). All run on the GPU. |
+| **After Effects-style effects (113 more)** | On the Advanced (AE) page, under their After Effects names and categories: all of **3D Channel**, **Color Correction**, **Distort**, **Perspective** and **Stylize** that can work on ordinary video (Curves, Channel Mixer, Color Balance, Photo Filter, Selective Color, Corner Pin, Page Turn, Sphere, Cylinder, Turbulent Displace, Warp, Polar Coordinates, Bevel Alpha, Motion Tile, Roughen Edges…), plus picks from Blur & Sharpen, Channel, Generate, Keying, Matte, Noise & Grain, Transition and Simulation (Camera Lens Blur, Fractal Noise, Lens Flare, Light Sweep, Beam, Radio Waves, Venetian Blinds, Rainfall, Snowfall…). AE effects OpenComp already had are listed there too. |
 | **Masks** | Rectangle (Q), ellipse (E) and pen (G) masks, with add/subtract/intersect, feather, expansion, opacity and invert. |
 | **AI masks** | **Mask brush (B):** paint over an object and the AI masks exactly that object. Alt-paint marks areas to leave out. **Smart click (A):** click an object and the AI works out what you mean; Tab cycles between interpretations (part vs. whole). **Tracking:** one click makes the mask follow the object through the clip. Runs locally (Segment Anything), downloaded once, ~15 MB. |
 | **Audio** | Volume up to 200%, pan, fades, 3-band EQ, waveforms, level meter. |
-| **Viewer** | Fit or 25–200% zoom, half/quarter preview resolution, rule-of-thirds and safe-area guides, transparency grid, Save Frame as PNG, maximize any panel (double-click its title). |
+| **Viewer** | The preview follows the media while playing, so the picture never lags behind the playhead (even across cuts). Fit or 25–200% zoom, half/quarter preview resolution, rule-of-thirds and safe-area guides, transparency grid, Save Frame as PNG, maximize any panel (double-click its title). |
 | **Export** | MP4 (H.264) or WebM with audio, whole edit or work area only. |
 | **Settings** | Dark/light/system theme, accent colour, font size, track height, preview quality, autosave, AI models and keys. Press Ctrl+, to open them. |
 
@@ -102,8 +105,11 @@ src/
   project.ts           Data model (Project, Asset, Clip, Track, Mask, Effect, Keyframe…) + migration of old files
   store.ts             App state: project, undo/redo history, UI state; autosave to IndexedDB
   settings.ts          Preferences, feature toggles, theme
-  features.ts          The Features sidebar list (every toggleable feature)
-  effects.ts           The effects library: each effect's parameters and GLSL shader passes
+  features.ts          The Features sidebar list (every toggleable feature, both pages)
+  toolWindows.ts       Floating tool windows opened from the sidebar
+  effects.ts           The essential effects: each effect's parameters and GLSL shader passes
+  fxlib.ts             Building blocks shared by all effects (param helpers, blur, noise, depth)
+  advanced/            The After Effects-style effects, one file per AE category group
   actions.ts           Every editing command
   shortcuts.ts         Keyboard shortcuts (one table drives the handler and the Help dialog)
   platform.ts          Browser vs. desktop (file dialogs, file paths)
@@ -129,17 +135,28 @@ scripts/desktop.mjs    Builds the web app into the desktop shell and runs/packag
 
 ### Adding things
 
-- **An effect:** add an entry to `EFFECTS` in `src/effects.ts`: parameters plus one or more GLSL passes. It automatically appears in the sidebar and Properties, is keyframeable, and becomes available to Claude.
+- **An effect:** add an entry to `EFFECTS` in `src/effects.ts` (or to a file in `src/advanced/` for the Advanced page): parameters plus one or more GLSL passes. It automatically appears in the sidebar and Properties, is keyframeable, and becomes available to Claude.
 - **A feature toggle:** add it to `src/features.ts` and check `useEnabled('your-id')` where it appears.
 - **A Claude tool:** describe it in `mcp/tools.json` and implement it in `HANDLERS` in `src/ai/tools.ts`. Both the MCP bridge and the in-app assistant pick it up.
 - **A clip property:** add it to `project.ts` (with a default in `newClip` / `migrateProject`), show it in `Inspector.tsx`, use it in `playback.ts` / `renderer.ts`.
 
 ## Known limitations
 
+- **3D Channel effects** (Depth Matte, Depth of Field, Fog 3D…) normally read depth from 3D renders. Video has no depth channel, so OpenComp estimates it from brightness or height; pick which in each effect.
+- Looping a very short work area pauses briefly at each restart while the video decoder seeks back to the start.
 - **Export runs in real time** (it plays the edit while recording), so the window must stay visible. A faster frame-by-frame exporter is on the roadmap.
 - AI mask tracking takes about 1–2 seconds per frame. Use **Settings → AI → Tracking detail** to track every 2nd or 4th frame.
 - Codec support follows the browser engine. ProRes and some HEVC/MKV files may not open.
 - In the browser version, media files are matched by name when you reopen a project (Relink). The desktop app doesn't need this.
+
+### After Effects effects not included
+
+- **Immersive video** (all), as asked.
+- **Need a second layer as input:** Color Link, Compound Blur, Texturize, Environment, Difference Matte, Set Matte, Set Channels, Calculations, Blend, Compound Arithmetic, Composite, Glass Wipe, Image Wipe. OpenComp effects only see their own layer.
+- **Need motion analysis or several frames at once:** Warp Stabilizer, Rolling Shutter Repair, Color Stabilizer, Pixel Motion Blur, Timewarp, Echo, Posterize Time, Time Difference, Time Displacement.
+- **Need an interactive mesh, brush or mask tool:** Liquify, Mesh Warp, Reshape, Smear, Inner/Outer Key, Stroke, Vegas, Scribble, Write-on, Paint Bucket.
+- **Need data OpenComp can't read:** Cryptomatte (multi-layer EXR render passes), PS Arbitrary Map (Photoshop .amp files), Audio Spectrum and Audio Waveform.
+- **Too heavy for a light editor:** the particle and 3D simulations (Particle World, Shatter, Foam, Card Wipe…; Rainfall and Snowfall are included), Mr. Smoothie, Lumetri's curves and wheels (Basic Color Grade covers its Basic panel), Keylight (Color Difference Key and Linear Color Key cover screen keying).
 
 ## Roadmap
 

@@ -91,6 +91,30 @@ export function visualClipsAt(p: Project, t: number): { clip: Clip; asset?: Asse
   return out
 }
 
+/**
+ * Which clips can share one media element: pieces that carry straight on from each other (same
+ * media, track and speed, the next starting exactly where the previous ends, on the timeline and in
+ * the source, which is what a split makes). Playback then runs across the cut without restarting.
+ * Returns clip id -> key (the id of the first piece in the run).
+ */
+export function playbackKeys(p: Project): Map<string, string> {
+  const keys = new Map<string, string>()
+  const media = p.clips.filter((c) => c.assetId).sort((a, b) => a.start - b.start)
+  for (const clip of media) {
+    const before = media.find(
+      (c) =>
+        c !== clip &&
+        c.trackId === clip.trackId &&
+        c.assetId === clip.assetId &&
+        c.speed === clip.speed &&
+        Math.abs(clipEnd(c) - clip.start) < 1e-3 &&
+        Math.abs(sourceTime(c, clipEnd(c)) - clip.in) < 1e-3,
+    )
+    keys.set(clip.id, before ? keys.get(before.id)! : clip.id)
+  }
+  return keys
+}
+
 /** Every marker and clip edge, sorted: what "jump to previous/next" moves between. */
 export function editPoints(p: Project): number[] {
   const points = new Set<number>([0, ...p.markers.map((m) => m.time)])

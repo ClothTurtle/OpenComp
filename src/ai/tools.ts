@@ -20,7 +20,7 @@ import {
   updateEffect,
   updateMask,
 } from '../actions'
-import { EFFECT_MAP, EFFECTS } from '../effects'
+import { ALL_EFFECTS, EFFECT_MAP } from '../effects'
 import { hasSource } from '../engine/media'
 import { captureFrame, pause, seek } from '../engine/playback'
 import { layerGeometry, toLayer } from '../lib/geometry'
@@ -134,7 +134,7 @@ const HANDLERS: Record<string, (a: Args) => Promise<ToolResult> | ToolResult> = 
   get_frame: (a) => frameImage(a.time, a.max_size ?? 768),
   list_effects: () =>
     ok({
-      effects: EFFECTS.map((e) => ({
+      effects: ALL_EFFECTS.map((e) => ({
         type: e.type,
         name: e.name,
         category: e.category,

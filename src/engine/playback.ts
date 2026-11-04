@@ -3,8 +3,8 @@
 import { EFFECT_MAP } from '../effects'
 import { resolveClip } from '../lib/keyframes'
 import { toFrame } from '../lib/time'
-import { contentEnd, layerTime, sourceTime, trackState, visualClipsAt } from '../lib/timeline'
-import type { Project } from '../project'
+import { contentEnd, isActiveAt, layerTime, playbackKeys, sourceTime, trackState, visualClipsAt } from '../lib/timeline'
+import type { Asset, Clip, Project } from '../project'
 import { getSettings, isEnabled, useSettings } from '../settings'
 import { getState, setState, useStore } from '../store'
 import { masksKey, rasterizeMasks } from './masks'
@@ -13,6 +13,8 @@ import { createRenderer, type Frame, type Layer, type Renderer } from './rendere
 
 const PRELOAD_S = 2 // start decoding a clip this long before the playhead reaches it
 const MAX_DRIFT_S = 0.25 // re-sync a playing element that drifts further than this
+const SYNC_TOLERANCE_S = 0.05 // the playhead snaps to the playing media when it's further off than this
+const HOLD_LIMIT_MS = 1500 // longest the playhead waits for media to start before running without it
 
 let renderer: Renderer | null = null
 let canvas: HTMLCanvasElement | null = null
@@ -61,6 +63,7 @@ export function play() {
   ensureAudio()
   const start = time >= to || time < from ? from : time
   clock = { wall: performance.now(), time: start }
+  holdingSince = 0
   setState({ playing: true, time: start })
 }
 
@@ -76,13 +79,69 @@ export function stepFrames(n: number) {
   seek(getState().time + n / getState().project.settings.fps)
 }
 
+const keysCache = new WeakMap<Project, Map<string, string>>()
+
+/** The media element key for a clip: split pieces that carry straight on share one (see playbackKeys). */
+export function elementKey(p: Project, clip: Clip) {
+  let keys = keysCache.get(p)
+  if (!keys) keysCache.set(p, (keys = playbackKeys(p)))
+  return keys.get(clip.id) ?? clip.id
+}
+
+export const elementFor = (p: Project, clip: Clip, asset: Asset) => clipElement(clip, asset, requestRender, elementKey(p, clip))
+
+/** The clip whose media drives the clock at time t: the topmost video, else any audio. */
+function masterAt(p: Project, t: number) {
+  let audioMaster: { clip: Clip; el: HTMLMediaElement } | null = null
+  for (const track of p.tracks) {
+    for (const clip of p.clips) {
+      if (clip.trackId !== track.id || !isActiveAt(clip, t)) continue
+      const asset = p.assets.find((a) => a.id === clip.assetId)
+      const el = asset && asset.kind !== 'image' ? elementFor(p, clip, asset) : null
+      if (!el) continue
+      if (asset!.kind === 'video') return { clip, el }
+      audioMaster ??= { clip, el }
+    }
+  }
+  return audioMaster
+}
+
+let holdingSince = 0
+
+/**
+ * Advance the playhead. While a video or audio clip is playing it is the clock: the playhead follows
+ * that media, and waits while it starts or buffers, so the picture never lags behind the playhead.
+ * With no media under the playhead (stills, text, gaps) the wall clock runs it.
+ */
+function advance(p: Project, now: number): number {
+  const wall = clock.time + (now - clock.wall) / 1000
+  const master = masterAt(p, clock.time)
+  if (!master || master.el.ended) {
+    holdingSince = 0
+    return wall
+  }
+  const { clip, el } = master
+  if (el.paused || el.seeking || el.readyState < 3) {
+    holdingSince ||= now
+    // Give up waiting on media that won't start (e.g. a broken file) rather than freezing playback.
+    if (now - holdingSince > HOLD_LIMIT_MS) return wall
+    clock = { wall: now, time: clock.time }
+    return clock.time
+  }
+  holdingSince = 0
+  const mediaTime = clip.start + (el.currentTime - clip.in) / (clip.speed / 100)
+  if (Math.abs(wall - mediaTime) <= SYNC_TOLERANCE_S) return wall
+  clock = { wall: now, time: mediaTime }
+  return mediaTime
+}
+
 function tick(now: number) {
   const { project, playing } = getState()
   let { time } = getState()
   let stillPlaying = playing
   if (playing) {
     const [from, to] = playRange(project)
-    time = clock.time + (now - clock.wall) / 1000
+    time = advance(project, now)
     if (time >= to) {
       if (getSettings().loop && !exportRange) {
         time = from
@@ -108,25 +167,35 @@ useStore.subscribe((s, prev) => {
 })
 useSettings.subscribe(requestRender)
 
-/** Play, pause and seek each clip's element so it shows the right frame for time t. */
+/** Play, pause and seek each media element so it shows the right frame for time t. */
 function syncMedia(p: Project, t: number, playing: boolean) {
-  const nearby = new Set<string>()
+  // Clips near the playhead, grouped by the element that plays them.
+  const groups = new Map<string, { asset: Asset; clips: Clip[] }>()
   for (const clip of p.clips) {
     const asset = p.assets.find((a) => a.id === clip.assetId)
     if (!asset || asset.kind === 'image') continue
     const local = t - clip.start
     if (local < -PRELOAD_S || local > clip.duration + 0.5) continue
-    const el = clipElement(clip, asset, requestRender)
-    if (!el) continue
-    nearby.add(clip.id)
+    const key = elementKey(p, clip)
+    const group = groups.get(key)
+    if (group) group.clips.push(clip)
+    else groups.set(key, { asset, clips: [clip] })
+  }
 
-    if (local < 0 || local >= clip.duration) {
-      // Not on screen yet (or just finished): park it on its first frame so the cut is instant.
+  for (const [key, { asset, clips }] of groups) {
+    const clip = clips.find((c) => isActiveAt(c, t))
+    const el = clipElement(clip ?? clips[0], asset, requestRender, key)
+    if (!el) continue
+
+    if (!clip) {
+      // Not on screen yet (or just finished): park it on the next clip's first frame so the cut is instant.
       if (!el.paused) el.pause()
-      if (local < 0 && Math.abs(el.currentTime - clip.in) > 0.01) el.currentTime = clip.in
+      const next = clips.filter((c) => c.start > t).sort((a, b) => a.start - b.start)[0]
+      if (next && Math.abs(el.currentTime - next.in) > 0.01) el.currentTime = next.in
       continue
     }
 
+    const local = t - clip.start
     const c = resolveClip(clip, layerTime(clip, t))
     const track = p.tracks.find((tr) => tr.id === clip.trackId)
     const audible = track ? trackState(p, track).audible : true
@@ -158,7 +227,7 @@ function syncMedia(p: Project, t: number, playing: boolean) {
       if (Math.abs(el.currentTime - target) > 0.5 / p.settings.fps) el.currentTime = target
     }
   }
-  releaseElementsExcept(nearby)
+  releaseElementsExcept(new Set(groups.keys()))
 }
 
 /** Everything the renderer needs to draw time t. */
@@ -204,7 +273,7 @@ function layersAt(p: Project, t: number): Layer[] {
       const img = imageElement(asset, requestRender)
       return img ? [{ ...base, ...size, kind: 'media', source: img, ready: true, still: true }] : []
     }
-    const video = clipElement(clip, asset, requestRender) as HTMLVideoElement | null
+    const video = elementFor(p, clip, asset) as HTMLVideoElement | null
     return video ? [{ ...base, ...size, kind: 'media', source: video, ready: video.readyState >= 2, still: false }] : []
   })
 }
@@ -218,7 +287,7 @@ export async function waitForFrame(timeoutMs = 4000) {
     const ready = visualClipsAt(project, time).every(({ clip, asset }) => {
       if (!asset) return true
       if (asset.kind === 'image') return !!imageElement(asset, requestRender)
-      const el = clipElement(clip, asset, requestRender)
+      const el = elementFor(project, clip, asset)
       return !el || (el.readyState >= 2 && !el.seeking)
     })
     if (ready) return

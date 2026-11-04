@@ -1,33 +1,51 @@
 import { ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { FEATURES, type Feature } from '../features'
+import { FEATURES, type Feature, type FeaturePage } from '../features'
 import { EFFECT_DRAG_TYPE } from '../lib/files'
 import { setFeatureEnabled, updateSettings, useSettings } from '../settings'
 import { useStore } from '../store'
 import { Panel } from './Panel'
 import { IconButton, Toggle } from './ui'
 
+const PAGES: { id: FeaturePage; label: string; note: string }[] = [
+  { id: 'essentials', label: 'Essentials', note: '' },
+  {
+    id: 'advanced',
+    label: 'Advanced (AE)',
+    note: 'After Effects-style effects, by After Effects category. Select a clip and click Apply (or drag an effect onto a clip).',
+  },
+]
+
 /**
- * Every optional feature and effect in one searchable list. Toggle anything off to hide it from the
- * app; effects and presets can be applied to the selected clip (or dragged onto a clip).
+ * Every optional feature and effect in one searchable list, on two pages: the essentials and the
+ * After Effects-style advanced effects. Toggle anything off to hide it from the app; the button on a
+ * row (or a double-click) uses it straight away: effects are applied and open their own window.
  */
 export function FeaturesSidebar() {
   const disabled = useSettings((s) => s.disabledFeatures)
   const hasClip = useStore((s) => !!s.selectedClipId)
+  const [page, setPage] = useState<FeaturePage>('essentials')
   const [query, setQuery] = useState('')
   const [onlyEnabled, setOnlyEnabled] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const q = query.trim().toLowerCase()
+  const matches = useMemo(
+    () =>
+      FEATURES.filter(
+        (f) =>
+          !(onlyEnabled && disabled.includes(f.id)) &&
+          (!q || `${f.name} ${f.category} ${f.description} ${f.keywords ?? ''}`.toLowerCase().includes(q)),
+      ),
+    [q, onlyEnabled, disabled],
+  )
   const groups = useMemo(() => {
     const map = new Map<string, Feature[]>()
-    for (const f of FEATURES) {
-      if (onlyEnabled && disabled.includes(f.id)) continue
-      if (q && !`${f.name} ${f.category} ${f.description} ${f.keywords ?? ''}`.toLowerCase().includes(q)) continue
-      map.set(f.category, [...(map.get(f.category) ?? []), f])
-    }
+    for (const f of matches) if ((f.page ?? 'essentials') === page) map.set(f.category, [...(map.get(f.category) ?? []), f])
     return [...map]
-  }, [q, onlyEnabled, disabled])
+  }, [matches, page])
+  const otherPage = PAGES.find((p) => p.id !== page)!
+  const otherMatches = q ? matches.filter((f) => (f.page ?? 'essentials') === otherPage.id).length : 0
 
   const toggleGroup = (cat: string) =>
     setCollapsed((s) => {
@@ -37,10 +55,19 @@ export function FeaturesSidebar() {
       return next
     })
 
-  const enabledCount = FEATURES.length - disabled.filter((id) => FEATURES.some((f) => f.id === id)).length
+  const ids = new Set(FEATURES.map((f) => f.id))
+  const enabledCount = ids.size - disabled.filter((id) => ids.has(id)).length
+  const note = PAGES.find((p) => p.id === page)!.note
 
   return (
     <Panel title="Features & Effects" className="features-panel" actions={<IconButton icon={X} title="Hide sidebar (Ctrl+B)" onClick={() => updateSettings({ showSidebar: false })} />}>
+      <div className="feature-tabs" role="tablist">
+        {PAGES.map((p) => (
+          <button key={p.id} type="button" role="tab" aria-selected={page === p.id} onClick={() => setPage(p.id)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
       <div className="feature-search">
         <Search size={13} />
         <input placeholder="Search features & effects" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -48,7 +75,7 @@ export function FeaturesSidebar() {
       </div>
       <div className="feature-summary">
         <span>
-          {enabledCount} of {FEATURES.length} on
+          {enabledCount} of {ids.size} on
         </span>
         <label className="check">
           <input type="checkbox" checked={onlyEnabled} onChange={(e) => setOnlyEnabled(e.target.checked)} /> Enabled only
@@ -60,6 +87,7 @@ export function FeaturesSidebar() {
         )}
       </div>
       <div className="feature-list">
+        {note && !q && <div className="feature-page-note">{note}</div>}
         {groups.map(([category, items]) => {
           const open = !!q || !collapsed.has(category)
           return (
@@ -69,11 +97,16 @@ export function FeaturesSidebar() {
                 <span>{category}</span>
                 <span className="count">{items.length}</span>
               </button>
-              {open && items.map((f) => <FeatureRow key={f.id} feature={f} on={!disabled.includes(f.id)} hasClip={hasClip} />)}
+              {open && items.map((f) => <FeatureRow key={`${f.id}:${f.name}`} feature={f} on={!disabled.includes(f.id)} hasClip={hasClip} />)}
             </section>
           )
         })}
-        {groups.length === 0 && <div className="empty-note">Nothing matches “{query}”.</div>}
+        {groups.length === 0 && <div className="empty-note">Nothing here matches “{query}”.</div>}
+        {otherMatches > 0 && (
+          <button type="button" className="link feature-page-note" onClick={() => setPage(otherPage.id)}>
+            {otherMatches} more on the {otherPage.label} page →
+          </button>
+        )}
       </div>
     </Panel>
   )
@@ -81,7 +114,9 @@ export function FeaturesSidebar() {
 
 function FeatureRow({ feature: f, on, hasClip }: { feature: Feature; on: boolean; hasClip: boolean }) {
   const isEffect = f.id.startsWith('fx:')
-  const needsSelection = !!f.action?.needsClip && !hasClip
+  const action = f.action
+  const usable = !!action && on && !(action.needsClip && !hasClip)
+  const active = useSettings((s) => !!action?.active?.(s))
   return (
     <div
       className={`feature-row ${on ? '' : 'off'}`}
@@ -90,21 +125,23 @@ function FeatureRow({ feature: f, on, hasClip }: { feature: Feature; on: boolean
         e.dataTransfer.setData(EFFECT_DRAG_TYPE, f.id.slice(3))
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      title={isEffect && on ? `${f.description}\nDrag onto a clip, or select a clip and click Apply.` : f.description}
+      onDoubleClick={(e) => usable && !(e.target as HTMLElement).closest('button, input') && action!.run()}
+      title={isEffect && on ? `${f.description}\nDouble-click or Apply to add it to the selected clip, or drag it onto a clip.` : f.description}
     >
       <div className="feature-text">
         <span className="feature-name">{f.name}</span>
         <span className="feature-desc">{f.description}</span>
       </div>
-      {f.action && (
+      {action && (
         <button
           type="button"
-          className="btn small"
-          disabled={!on || needsSelection}
-          title={needsSelection ? 'Select a clip first' : undefined}
-          onClick={f.action.run}
+          className={`btn small ${active ? 'active' : ''}`}
+          aria-pressed={action.active ? active : undefined}
+          disabled={!usable}
+          title={on && action.needsClip && !hasClip ? 'Select a clip first' : undefined}
+          onClick={action.run}
         >
-          {f.action.label}
+          {action.label}
         </button>
       )}
       <Toggle on={on} onChange={(v) => setFeatureEnabled(f.id, v)} label={f.name} />

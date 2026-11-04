@@ -5,78 +5,11 @@
 // - u_size is the working texture size in px; multiply px-based params by u_px (texture px per comp px)
 // - u_time (timeline s), u_local (s since the clip started), u_duration (clip length)
 // - every param is available as a uniform named u_<key> (colours are vec3, selects are the option index)
+import { ADVANCED_CATEGORIES, ADVANCED_EFFECTS } from './advanced'
+import { ANIMATE, BLUR, WIPE_TIME, blurPasses, bool, color, colorFx, num, select, type EffectDef } from './fxlib'
 import type { ParamValue } from './project'
 
-export interface ParamDef {
-  key: string
-  label: string
-  type: 'number' | 'color' | 'boolean' | 'select'
-  default: ParamValue
-  min?: number
-  max?: number
-  step?: number
-  unit?: string
-  options?: string[]
-}
-
-export interface EffectPass {
-  frag: string
-  uniforms?: (p: Record<string, ParamValue>) => Record<string, number | number[]>
-}
-
-export interface EffectDef {
-  type: string
-  name: string
-  category: string
-  description: string
-  keywords?: string
-  params: ParamDef[]
-  passes: EffectPass[]
-}
-
-const num = (key: string, label: string, def: number, min: number, max: number, step = 1, unit?: string): ParamDef => ({
-  key, label, type: 'number', default: def, min, max, step, unit,
-})
-const color = (key: string, label: string, def: string): ParamDef => ({ key, label, type: 'color', default: def })
-const bool = (key: string, label: string, def: boolean): ParamDef => ({ key, label, type: 'boolean', default: def })
-const select = (key: string, label: string, options: string[]): ParamDef => ({
-  key, label, type: 'select', default: options[0], options,
-})
-
-/** A per-pixel colour effect: `body` edits `rgb` (unpremultiplied); `c` is the source pixel. */
-const colorFx = (body: string) => `void main() {
-  vec4 c = src();
-  vec3 rgb = c.rgb;
-  ${body}
-  outColor = premul(vec4(clamp(rgb, 0.0, 1.0), c.a));
-}`
-
-/** Separable gaussian blur along u_dir, radius u_blurRadius (comp px). */
-const BLUR = `uniform float u_blurRadius;
-void main() {
-  float r = u_blurRadius * u_px;
-  if (r < 0.5 || dot(u_dir, u_dir) == 0.0) { outColor = texture(u_tex, v_uv); return; }
-  float sigma = max(r / 2.0, 0.5);
-  float stride = max(1.0, r / 20.0);
-  vec2 stepUv = u_dir / u_size;
-  vec4 acc = vec4(0.0);
-  float total = 0.0;
-  for (int i = -20; i <= 20; i++) {
-    float x = float(i) * stride;
-    if (abs(x) > r) continue;
-    float w = exp(-0.5 * x * x / (sigma * sigma));
-    acc += texture(u_tex, v_uv + stepUv * x) * w;
-    total += w;
-  }
-  outColor = acc / total;
-}`
-const blurPasses = (radius: (p: Record<string, ParamValue>) => number): EffectPass[] => [
-  { frag: BLUR, uniforms: (p) => ({ u_blurRadius: radius(p), u_dir: [1, 0] }) },
-  { frag: BLUR, uniforms: (p) => ({ u_blurRadius: radius(p), u_dir: [0, 1] }) },
-]
-
-const ANIMATE = select('animate', 'Animate', ['Off', 'Wipe in', 'Wipe out', 'In and out'])
-const WIPE_TIME = num('wipeTime', 'Wipe duration', 1, 0.1, 10, 0.05, 's')
+export type { EffectDef, EffectPass, ParamDef } from './fxlib'
 
 export const EFFECTS: EffectDef[] = [
   // ---- Color & Light -------------------------------------------------------------------------
@@ -654,9 +587,16 @@ export const EFFECTS: EffectDef[] = [
   },
 ]
 
-export const EFFECT_MAP = new Map(EFFECTS.map((e) => [e.type, e]))
+/** The essentials plus the After Effects-style effects (src/advanced). */
+export const ALL_EFFECTS: EffectDef[] = [...EFFECTS, ...ADVANCED_EFFECTS]
 
-export const EFFECT_CATEGORIES = [...new Set(EFFECTS.map((e) => e.category))]
+export const EFFECT_MAP = new Map(ALL_EFFECTS.map((e) => [e.type, e]))
+
+/** Effects grouped for menus: the essential categories, then the After Effects-style ones. */
+export const EFFECT_GROUPS: [string, EffectDef[]][] = [
+  ...[...new Set(EFFECTS.map((e) => e.category))].map((cat): [string, EffectDef[]] => [cat, EFFECTS.filter((e) => e.category === cat)]),
+  ...ADVANCED_CATEGORIES.map((cat): [string, EffectDef[]] => [`AE · ${cat}`, ADVANCED_EFFECTS.filter((e) => e.category === cat).sort((a, b) => a.name.localeCompare(b.name))]),
+]
 
 export function defaultParams(def: EffectDef): Record<string, ParamValue> {
   return Object.fromEntries(def.params.map((p) => [p.key, p.default]))

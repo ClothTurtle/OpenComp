@@ -445,6 +445,15 @@ export function setWorkArea(edge: 'in' | 'out') {
   })
 }
 
+/** Set the work area to one clip, so play and loop cover just that clip. */
+export function workAreaToClip(id = getState().selectedClipId) {
+  commit((p) => {
+    const clip = p.clips.find((c) => c.id === id)
+    if (!clip) return false
+    p.workArea = [clip.start, clipEnd(clip)]
+  })
+}
+
 export function clearWorkArea() {
   commit((p) => {
     if (!p.workArea) return false

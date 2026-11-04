@@ -9,7 +9,7 @@ interface Source {
 }
 
 const sources = new Map<string, Source>() // assetId -> media URL
-const elements = new Map<string, { el: HTMLMediaElement; url: string }>() // clipId -> decoder
+const elements = new Map<string, { el: HTMLMediaElement; url: string }>() // element key (see clipElement) -> decoder
 const images = new Map<string, HTMLImageElement>() // assetId -> decoded image
 
 const EXTENSION_KIND: Record<string, AssetKind> = {
@@ -115,15 +115,16 @@ function snapshot(video: HTMLVideoElement): string {
 }
 
 /**
- * The element that plays `clip`, created on demand. Each clip gets its own element so two clips
- * from the same file (e.g. after a cut, or stacked on two tracks) can play independently.
+ * The element that plays `clip`, created on demand. Clips get their own element so two clips from
+ * the same file (e.g. stacked on two tracks) can play independently; `key` lets the pieces of a
+ * split share one (see playbackKeys), so playback runs across the cut without restarting.
  */
-export function clipElement(clip: Clip, asset: Asset, onUpdate: () => void): HTMLMediaElement | null {
+export function clipElement(clip: Clip, asset: Asset, onUpdate: () => void, key = clip.id): HTMLMediaElement | null {
   const source = sources.get(asset.id)
   if (!source || asset.kind === 'image') return null
-  const cached = elements.get(clip.id)
+  const cached = elements.get(key)
   if (cached?.url === source.url) return cached.el
-  releaseElement(clip.id)
+  releaseElement(key)
 
   const el = document.createElement(asset.kind)
   el.preload = 'auto'
@@ -131,25 +132,25 @@ export function clipElement(clip: Clip, asset: Asset, onUpdate: () => void): HTM
   el.src = source.url
   el.addEventListener('seeked', onUpdate)
   el.addEventListener('loadeddata', onUpdate)
-  elements.set(clip.id, { el, url: source.url })
+  elements.set(key, { el, url: source.url })
   if (audio) connect(el)
   return el
 }
 
-export function releaseElement(clipId: string) {
-  const entry = elements.get(clipId)
+export function releaseElement(key: string) {
+  const entry = elements.get(key)
   if (!entry) return
   entry.el.pause()
   entry.el.removeAttribute('src')
   entry.el.load()
   chains.get(entry.el)?.gain.disconnect()
   chains.delete(entry.el)
-  elements.delete(clipId)
+  elements.delete(key)
 }
 
-/** Free decoders for every clip not in `keep` (clips far from the playhead). */
+/** Free decoders for every element key not in `keep` (clips far from the playhead). */
 export function releaseElementsExcept(keep: Set<string>) {
-  for (const clipId of [...elements.keys()]) if (!keep.has(clipId)) releaseElement(clipId)
+  for (const key of [...elements.keys()]) if (!keep.has(key)) releaseElement(key)
 }
 
 /** The decoded image for a still, or null while it is still loading. */

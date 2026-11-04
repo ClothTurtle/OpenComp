@@ -1,7 +1,7 @@
 {
   "name": "opencomp-desktop",
   "productName": "OpenComp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "OpenComp desktop app: the OpenComp editor in its own window, with direct file access.",
   "author": "OpenComp contributors",
   "license": "MIT",
@@ -60,8 +60,20 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64", "arm64"] },
-        { "target": "tar.gz", "arch": ["x64", "arm64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "artifactName": "OpenComp-${version}-linux-${arch}.${ext}",
       "executableName": "opencomp",

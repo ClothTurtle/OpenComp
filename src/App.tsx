@@ -13,6 +13,7 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { Split } from './components/Split'
 import { Timeline } from './components/Timeline'
 import { Toolbar } from './components/Toolbar'
+import { ToolWindows } from './components/ToolWindows'
 import { Tabs } from './components/ui'
 import { Viewer } from './components/Viewer'
 import { useSettings } from './settings'
@@ -72,6 +73,7 @@ export function App() {
           workspace
         )}
       </main>
+      <ToolWindows />
       {dialog === 'comp' && <CompSettingsDialog />}
       {dialog === 'export' && <ExportDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}

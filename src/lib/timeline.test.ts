@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_TRANSFORM, newClip, newProject, type Clip } from '../project'
 import { corners, containsPoint, layerGeometry } from './geometry'
 import { timecode, toFrame } from './time'
-import { contentEnd, isFree, layerTime, snapOffset, splitClip, visualClipsAt } from './timeline'
+import { contentEnd, isFree, layerTime, playbackKeys, snapOffset, splitClip, visualClipsAt } from './timeline'
 
 const clip = (over: Partial<Clip> = {}): Clip =>
   newClip({ id: 'a', assetId: 'asset', trackId: 't1', start: 2, in: 1, duration: 4, ...over })
@@ -36,6 +36,21 @@ describe('splitClip', () => {
     const [left, right] = splitClip(original, 4, 'b')!
     expect(layerTime(left, 5)).toBeCloseTo(layerTime(original, 5))
     expect(layerTime(right, 5)).toBeCloseTo(layerTime(original, 5))
+  })
+})
+
+describe('playbackKeys', () => {
+  it('lets the pieces of a split share one element, and nothing else', () => {
+    const p = newProject()
+    const [a, b] = splitClip(clip({ trackId: 't1' }), 4, 'b')!
+    const moved = clip({ id: 'moved', trackId: 't1', start: 10 }) // same media, but not continuous
+    const other = clip({ id: 'other', trackId: 't2', start: 6, in: 5 }) // continuous source, different track
+    p.clips = [b, a, moved, other]
+    const keys = playbackKeys(p)
+    expect(keys.get('a')).toBe('a')
+    expect(keys.get('b')).toBe('a')
+    expect(keys.get('moved')).toBe('moved')
+    expect(keys.get('other')).toBe('other')
   })
 })
 

@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useTracking, nextAlternative, trackMask } from '../ai/maskTools'
 import {
   applyEffect,
@@ -33,8 +33,9 @@ import {
   updateEffect,
   updateMask,
 } from '../actions'
-import { EFFECTS, EFFECT_CATEGORIES, EFFECT_MAP, type ParamDef } from '../effects'
+import { EFFECT_GROUPS, EFFECT_MAP, type ParamDef } from '../effects'
 import { seek } from '../engine/playback'
+import { useCoarseTime } from '../hooks'
 import { keyIndexAt, readProp, removeKeyframe, resolveClip, setKeyframe, toggleAnimation, writeProp } from '../lib/keyframes'
 import { timecode } from '../lib/time'
 import { clipEnd, layerTime } from '../lib/timeline'
@@ -52,8 +53,9 @@ import {
   type TextStyle,
   type Transform,
 } from '../project'
-import { useSettings } from '../settings'
+import { useEnabled, useSettings } from '../settings'
 import { setState, useStore, type Tool } from '../store'
+import type { ToolFocus, ToolSection } from '../toolWindows'
 import { Panel } from './Panel'
 import { PropertyRow } from './PropertyRow'
 import { IconButton, KindIcon, Toggle } from './ui'
@@ -90,10 +92,8 @@ const FONTS = [
 export function Inspector() {
   const clip = useStore((s) => s.project.clips.find((c) => c.id === s.selectedClipId))
   const assets = useStore((s) => s.project.assets)
-  const time = useStore((s) => s.time)
   const fps = useStore((s) => s.project.settings.fps)
-  const disabled = useSettings((s) => s.disabledFeatures)
-  const on = (id: string) => !disabled.includes(id)
+  const duplicateOn = useEnabled('duplicate')
 
   if (!clip) {
     return (
@@ -109,6 +109,57 @@ export function Inspector() {
   }
 
   const kind = clipKind(clip, assets)
+  return (
+    <Panel title="Properties">
+      <div className="inspector-head">
+        {kind && <KindIcon kind={kind} size={15} />}
+        <div>
+          <input
+            className="name-input"
+            value={clip.name ?? ''}
+            placeholder={clipLabel({ ...clip, name: undefined }, assets)}
+            aria-label="Clip name"
+            onChange={(e) => updateClip(clip.id, (c) => (c.name = e.target.value || undefined), `${clip.id}:name`)}
+          />
+          <span className="muted">
+            {timecode(clip.start, fps)} – {timecode(clipEnd(clip), fps)}
+          </span>
+        </div>
+      </div>
+
+      <ClipControls clip={clip} />
+
+      <div className="inspector-actions">
+        <button type="button" className="btn" onClick={splitAtPlayhead}>
+          <Scissors size={13} /> Split
+        </button>
+        {duplicateOn && (
+          <button type="button" className="btn" onClick={() => duplicateClip()}>
+            <Copy size={13} /> Duplicate
+          </button>
+        )}
+        <button type="button" className="btn danger" onClick={deleteSelectedClip}>
+          <Trash2 size={13} /> Delete
+        </button>
+      </div>
+    </Panel>
+  )
+}
+
+/** In a tool window, sections show their controls without the collapsible header. */
+const FlatSections = createContext(false)
+
+/**
+ * A clip's controls: all of them (the Properties panel), or just the part a tool window shows
+ * (`only`: one section, or one effect).
+ */
+export function ClipControls({ clip, only }: { clip: Clip; only?: ToolFocus }) {
+  const assets = useStore((s) => s.project.assets)
+  const time = useCoarseTime()
+  const disabled = useSettings((s) => s.disabledFeatures)
+  const on = (id: string) => !disabled.includes(id)
+
+  const kind = clipKind(clip, assets)
   const visual = kind !== 'audio'
   const audible = kind === 'video' || kind === 'audio'
   const showBlend = visual && kind !== 'adjustment' && on('blend-modes')
@@ -117,6 +168,19 @@ export function Inspector() {
   const resolved = resolveClip(clip, lt)
   const toTimeline = (kt: number) => kt + clip.start - clip.in / (clip.speed / 100)
   const edit = (key: string, change: (c: Clip) => void) => updateClip(clip.id, change, `${clip.id}:${key}`)
+
+  const available: Record<ToolSection, boolean> = {
+    text: !!clip.text && on('text-layers'),
+    layer: showBlend || showSpeed,
+    transform: visual,
+    color: visual,
+    masks: visual && on('masks'),
+    audio: audible,
+  }
+  const show = (section: ToolSection) => available[section] && (!only || (only.kind === 'section' && only.section === section))
+  if (only?.kind === 'section' && !available[only.section]) {
+    return <div className="empty-note">This clip has no {only.section === 'layer' ? 'blend or speed' : only.section} controls.</div>
+  }
 
   /** A numeric row wired to keyframes: shows the animated value at the playhead and edits keyframes when animated. */
   const prop = (path: string, label: string, min: number, max: number, step: number, unit: string | undefined, def: number) => {
@@ -154,32 +218,16 @@ export function Inspector() {
   }
 
   return (
-    <Panel title="Properties">
-      <div className="inspector-head">
-        {kind && <KindIcon kind={kind} size={15} />}
-        <div>
-          <input
-            className="name-input"
-            value={clip.name ?? ''}
-            placeholder={clipLabel({ ...clip, name: undefined }, assets)}
-            aria-label="Clip name"
-            onChange={(e) => edit('name', (c) => (c.name = e.target.value || undefined))}
-          />
-          <span className="muted">
-            {timecode(clip.start, fps)} – {timecode(clipEnd(clip), fps)}
-          </span>
-        </div>
-      </div>
+    <FlatSections.Provider value={!!only}>
+      {show('text') && <TextSection text={clip.text!} edit={edit} sizeRow={prop('text.size', 'Size', 8, 600, 1, 'px', 96)} />}
 
-      {clip.text && on('text-layers') && <TextSection text={clip.text} edit={edit} sizeRow={prop('text.size', 'Size', 8, 600, 1, 'px', 96)} />}
-
-      {clip.solid && (
+      {clip.solid && !only && (
         <Section title="Solid">
           <ColorRow label="Colour" value={clip.solid} onChange={(v) => edit('solid', (c) => (c.solid = v))} />
         </Section>
       )}
 
-      {(showBlend || showSpeed) && (
+      {show('layer') && (
         <Section title="Layer">
           {showBlend && (
             <SelectRow
@@ -195,7 +243,7 @@ export function Inspector() {
         </Section>
       )}
 
-      {visual && (
+      {show('transform') && (
         <Section title={kind === 'adjustment' ? 'Opacity' : 'Transform'}>
           {TRANSFORM_FIELDS.filter(([key]) => kind !== 'adjustment' || key === 'opacity').map(([key, label, min, max, step, unit]) =>
             prop(`transform.${key}`, label, min, max, step, unit, DEFAULT_TRANSFORM[key]),
@@ -203,17 +251,17 @@ export function Inspector() {
         </Section>
       )}
 
-      {visual && (
+      {show('color') && (
         <Section title="Color">
           {COLOR_FIELDS.map(([key, label, min, max, step, unit]) => prop(`color.${key}`, label, min, max, step, unit, DEFAULT_COLOR[key]))}
         </Section>
       )}
 
-      {visual && <EffectsSection clip={clip} prop={prop} enabled={on} />}
+      {visual && (!only || only.kind === 'effect') && <EffectsSection clip={clip} prop={prop} enabled={on} onlyFx={only?.kind === 'effect' ? only.fxId : undefined} />}
 
-      {visual && on('masks') && <MasksSection clip={clip} enabled={on} />}
+      {show('masks') && <MasksSection clip={clip} enabled={on} />}
 
-      {audible && (
+      {show('audio') && (
         <Section title="Audio">
           {prop('audio.volume', 'Volume', 0, 200, 1, '%', 100)}
           {on('audio-pan') && prop('audio.pan', 'Pan', -100, 100, 1, undefined, 0)}
@@ -229,21 +277,7 @@ export function Inspector() {
             )}
         </Section>
       )}
-
-      <div className="inspector-actions">
-        <button type="button" className="btn" onClick={splitAtPlayhead}>
-          <Scissors size={13} /> Split
-        </button>
-        {on('duplicate') && (
-          <button type="button" className="btn" onClick={() => duplicateClip()}>
-            <Copy size={13} /> Duplicate
-          </button>
-        )}
-        <button type="button" className="btn danger" onClick={deleteSelectedClip}>
-          <Trash2 size={13} /> Delete
-        </button>
-      </div>
-    </Panel>
+    </FlatSections.Provider>
   )
 }
 
@@ -282,9 +316,9 @@ function TextSection({ text, edit, sizeRow }: { text: TextStyle; edit: (key: str
   )
 }
 
-function EffectsSection({ clip, prop, enabled }: { clip: Clip; prop: PropFn; enabled: (id: string) => boolean }) {
+function EffectsSection({ clip, prop, enabled, onlyFx }: { clip: Clip; prop: PropFn; enabled: (id: string) => boolean; onlyFx?: string }) {
   const [closed, setClosed] = useState<Set<string>>(new Set())
-  const available = EFFECTS.filter((e) => enabled(`fx:${e.type}`))
+  if (onlyFx && !clip.effects.some((fx) => fx.id === onlyFx)) return <div className="empty-note">This effect was removed from the clip.</div>
   const toggleOpen = (id: string) =>
     setClosed((s) => {
       const next = new Set(s)
@@ -305,7 +339,7 @@ function EffectsSection({ clip, prop, enabled }: { clip: Clip; prop: PropFn; ena
     <Section title={`Effects${clip.effects.length ? ` (${clip.effects.length})` : ''}`}>
       {clip.effects.map((fx, i) => {
         const def = EFFECT_MAP.get(fx.type)
-        if (!def) return null
+        if (!def || (onlyFx && fx.id !== onlyFx)) return null
         const open = !closed.has(fx.id)
         const off = !enabled(`fx:${fx.type}`)
         return (
@@ -325,26 +359,28 @@ function EffectsSection({ clip, prop, enabled }: { clip: Clip; prop: PropFn; ena
           </div>
         )
       })}
-      <select
-        className="add-effect"
-        value=""
-        aria-label="Add effect"
-        onChange={(e) => e.target.value && applyEffect(e.target.value, clip.id)}
-      >
-        <option value="">+ Add effect…</option>
-        {EFFECT_CATEGORIES.map((cat) => {
-          const items = available.filter((e) => e.category === cat)
-          return items.length ? (
-            <optgroup key={cat} label={cat}>
-              {items.map((e) => (
-                <option key={e.type} value={e.type}>
-                  {e.name}
-                </option>
-              ))}
-            </optgroup>
-          ) : null
-        })}
-      </select>
+      {!onlyFx && (
+        <select
+          className="add-effect"
+          value=""
+          aria-label="Add effect"
+          onChange={(e) => e.target.value && applyEffect(e.target.value, clip.id)}
+        >
+          <option value="">+ Add effect…</option>
+          {EFFECT_GROUPS.map(([cat, defs]) => {
+            const items = defs.filter((e) => enabled(`fx:${e.type}`))
+            return items.length ? (
+              <optgroup key={cat} label={cat}>
+                {items.map((e) => (
+                  <option key={e.type} value={e.type}>
+                    {e.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null
+          })}
+        </select>
+      )}
     </Section>
   )
 }
@@ -445,6 +481,7 @@ function MasksSection({ clip, enabled }: { clip: Clip; enabled: (id: string) => 
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(true)
+  if (useContext(FlatSections)) return <div className="section-body">{children}</div>
   return (
     <div className="section">
       <button type="button" className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>

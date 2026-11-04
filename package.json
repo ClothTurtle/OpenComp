@@ -1,6 +1,6 @@
 {
   "name": "opencomp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A lightweight, open-source video compositor and editor that runs in your browser.",
   "license": "MIT",
   "private": true,
