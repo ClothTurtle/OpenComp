@@ -1,5 +1,7 @@
 # OpenComp
 
+(DISCLAIMER) This application is fully vibe-coded using Claude.
+
 A lightweight, open-source video compositor and editor with a dark, panel-based layout inspired by After Effects. It has AI masking that follows objects, auto captions, 46 GPU effects, keyframes, and Claude built in.
 
 It comes in two flavours, with the same app inside:
