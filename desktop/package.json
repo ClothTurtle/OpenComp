@@ -59,7 +59,12 @@
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": "AppImage",
+      "target": [
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "tar.gz", "arch": ["x64", "arm64"] }
+      ],
+      "artifactName": "OpenComp-${version}-linux-${arch}.${ext}",
+      "executableName": "opencomp",
       "category": "AudioVideo",
       "icon": "build/icon.png"
     }

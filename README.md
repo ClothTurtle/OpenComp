@@ -19,9 +19,16 @@ Download the installer for your system from the project's **Releases** page:
 | --- | --- |
 | Windows | `OpenComp-Setup-x.y.z.exe` (installer) or `OpenComp-Portable-x.y.z.exe` (no install) |
 | macOS | `OpenComp-x.y.z.dmg` |
-| Linux | `OpenComp-x.y.z.AppImage` |
+| Linux (incl. Arch) | `OpenComp-x.y.z-linux-x64.AppImage` / `…-linux-arm64.AppImage`, or the matching `.tar.gz` |
 
 The builds aren't code-signed yet. On Windows, click **More info → Run anyway** the first time. On macOS, right-click the app and choose **Open**.
+
+**Linux / Arch Linux:** pick `x64` for most PCs, `arm64` for ARM machines (e.g. Snapdragon laptops, Raspberry Pi 5, Asahi Macs).
+
+- **AppImage:** `chmod +x OpenComp-*.AppImage` and run it. Arch needs FUSE 2 for AppImages: `sudo pacman -S fuse2`.
+- **tar.gz:** extract it anywhere and run `./opencomp` inside the folder. No FUSE needed. If it exits with a sandbox error, run `sudo chown root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in that folder (or start it with `./opencomp --no-sandbox`).
+
+The Linux builds are made automatically and haven't been tried on a real Linux machine yet. Reports welcome.
 
 ### Browser version (from source)
 
