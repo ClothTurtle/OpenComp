@@ -1,7 +1,7 @@
 {
   "name": "opencomp-desktop",
   "productName": "OpenComp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "OpenComp desktop app: the OpenComp editor in its own window, with direct file access.",
   "author": "OpenComp contributors",
   "license": "MIT",

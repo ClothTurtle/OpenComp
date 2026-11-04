@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline'
 
 const TOOLS = JSON.parse(readFileSync(new URL('./tools.json', import.meta.url), 'utf8'))
 const PORT = Number(process.env.OPENCOMP_PORT) || 5199
-const VERSION = '0.2.0'
+const VERSION = '0.2.1'
 const LONG_TOOLS = new Set(['track_mask', 'generate_captions', 'ai_mask', 'import_media'])
 const NOT_CONNECTED =
   'OpenComp is not connected. Ask the user to open OpenComp and turn on Settings → Claude → "Connect to Claude Desktop / Claude Code".'
